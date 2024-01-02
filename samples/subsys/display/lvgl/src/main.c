@@ -8,6 +8,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/display.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/input/input.h>
 #include <lvgl.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,15 +20,13 @@
 LOG_MODULE_REGISTER(app);
 
 static uint32_t count;
+static lv_obj_t *debug_label;
 
 #ifdef CONFIG_GPIO
-static struct gpio_dt_spec button_gpio = GPIO_DT_SPEC_GET_OR(
-		DT_ALIAS(sw0), gpios, {0});
+static struct gpio_dt_spec button_gpio = GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw0), gpios, {0});
 static struct gpio_callback button_callback;
 
-static void button_isr_callback(const struct device *port,
-				struct gpio_callback *cb,
-				uint32_t pins)
+static void button_isr_callback(const struct device *port, struct gpio_callback *cb, uint32_t pins)
 {
 	ARG_UNUSED(port);
 	ARG_UNUSED(cb);
@@ -45,6 +44,17 @@ static const struct device *lvgl_encoder =
 #ifdef CONFIG_LV_Z_KEYPAD_INPUT
 static const struct device *lvgl_keypad =
 	DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_lvgl_keypad_input));
+
+static void input_cb(struct input_event *evt)
+{
+
+	char buf[1000];
+	snprintf(buf, sizeof(buf), "type: %d, code: %d, value: %d", evt->type, evt->code,
+		 evt->value);
+	lv_label_set_text(debug_label, buf);
+}
+INPUT_CALLBACK_DEFINE(NULL, input_cb);
+
 #endif /* CONFIG_LV_Z_KEYPAD_INPUT */
 
 static void lv_btn_click_callback(lv_event_t *e)
@@ -77,8 +87,7 @@ int main(void)
 			return 0;
 		}
 
-		gpio_init_callback(&button_callback, button_isr_callback,
-				   BIT(button_gpio.pin));
+		gpio_init_callback(&button_callback, button_isr_callback, BIT(button_gpio.pin));
 
 		err = gpio_add_callback(button_gpio.port, &button_callback);
 		if (err) {
@@ -86,8 +95,7 @@ int main(void)
 			return 0;
 		}
 
-		err = gpio_pin_interrupt_configure_dt(&button_gpio,
-						      GPIO_INT_EDGE_TO_ACTIVE);
+		err = gpio_pin_interrupt_configure_dt(&button_gpio, GPIO_INT_EDGE_TO_ACTIVE);
 		if (err) {
 			LOG_ERR("failed to enable button callback: %d", err);
 			return 0;
@@ -123,6 +131,10 @@ int main(void)
 	lv_indev_set_group(lvgl_input_get_indev(lvgl_keypad), btn_matrix_group);
 #endif /* CONFIG_LV_Z_KEYPAD_INPUT */
 
+	debug_label = lv_label_create(lv_scr_act());
+	lv_label_set_text(debug_label, "$debug");
+	lv_obj_align(debug_label, LV_ALIGN_TOP_MID, 0, 0);
+
 	if (IS_ENABLED(CONFIG_LV_Z_POINTER_KSCAN) || IS_ENABLED(CONFIG_LV_Z_POINTER_INPUT)) {
 		lv_obj_t *hello_world_button;
 
@@ -146,7 +158,7 @@ int main(void)
 
 	while (1) {
 		if ((count % 100) == 0U) {
-			sprintf(count_str, "%d", count/100U);
+			sprintf(count_str, "%d", count / 100U);
 			lv_label_set_text(count_label, count_str);
 		}
 		lv_task_handler();
